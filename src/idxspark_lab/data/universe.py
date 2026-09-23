@@ -81,11 +81,23 @@ def profile_tickers(reader, universe: List[str], calendar: List[str],
             rec["n_raw"] = reader.rows(
                 "idx_ohlcv", "SELECT COUNT(*) FROM prices_raw WHERE ticker=?", (t,))[0][0]
             rec["zero_vol"] = sum(1 for r in rows if not r[5])
-            rec["ohlc_viol"] = sum(
-                1 for r in rows
-                if r[1] is not None and r[2] is not None and r[3] is not None
-                and (r[2] < r[3] or (r[1] and r[1] > r[2]) or (r[4] and r[4] > r[2])
-                     or (r[4] is not None and r[4] <= 0)))
+            # OHLC violation dengan epsilon relatif 1e-4: data adjusted hasil
+            # faktor bisa berbeda di bit terakhir (high vs close identik tercetak,
+            # berbeda 1e-13 di REAL). Pelanggaran nyata = deviasi > 0,01% relatif.
+            def _viol(o, h, l, c):
+                if None in (o, h, l, c):
+                    return False
+                if h <= 0 or l <= 0:
+                    return True
+                eps = 1e-4
+                if h < l * (1 - eps):
+                    return True
+                if h < max(o, c) * (1 - eps):
+                    return True
+                if l > min(o, c) * (1 + eps):
+                    return True
+                return False
+            rec["ohlc_viol"] = sum(1 for r in rows if _viol(r[1], r[2], r[3], r[4]))
             rec["nonpos_close"] = sum(1 for r in rows if r[4] is not None and r[4] <= 0)
             # missing sessions antara first..last pada kalender bursa
             if dates:
@@ -128,7 +140,7 @@ def classify(rec: Dict[str, Any]) -> Tuple[str, List[str]]:
             if rec["span_sessions"] > 0 and \
                rec["missing_sessions"] / rec["span_sessions"] > 0.20:
                 reasons.append("MISSING_SESSIONS_GT20PCT")
-        if rec.get("ohlc_viol", 0) > 0:
+        if rec.get("ohlc_viol", 0) > 3 and rec["ohlc_viol"] / rec["n_adj"] > 0.002:
             reasons.append("OHLC_VIOLATION")
         if rec.get("nonpos_close", 0) > 0:
             reasons.append("NONPOSITIVE_CLOSE")

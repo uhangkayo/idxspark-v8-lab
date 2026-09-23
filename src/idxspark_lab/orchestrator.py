@@ -67,14 +67,16 @@ def _config_artifact(cfg_path: str, ledger: Ledger) -> str:
 
 def _profile_spec_artifact(ledger: Ledger) -> str:
     spec = canonical_json({
-        "kind": "FEATURE_SPEC", "name": "profile_v1",
+        "kind": "FEATURE_SPEC", "name": "profile_v2",
         "stage": "S1-S3-lite", "features": [],
         "checks": ["history", "missing_sessions", "zero_volume", "ohlc_violation",
                    "nonpos_close", "stale_tail", "survivorship_lrp", "raw_coverage"],
         "min_history_sessions": 250,
+        "ohlc_epsilon_relative": 1e-4,
+        "ohlc_unusable_rule": ">3 baris DAN >0.2% baris",
     })
     return _register_artifact(
-        ledger, "FEATURE_SPEC", "specs/profile_v1.json",
+        ledger, "FEATURE_SPEC", "specs/profile_v2.json",
         sha256_hex(spec.encode()), len(spec.encode()), "profile-spec/1", "v8lab")
 
 

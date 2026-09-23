@@ -54,9 +54,10 @@ def _mk_ohlcv(path: Path) -> None:
                          (dt, t, close - 1, close + 1, close - 2, close, 1000))
             conn.execute("INSERT INTO prices_raw VALUES(?,?,?,?,?,?,?)",
                          (dt, t, close - 1, close + 1, close - 2, close, 1000))
-    # ticker dengan OHLC violation → DATA_UNUSABLE
-    conn.execute("UPDATE prices SET high=1.0, low=99.0 WHERE ticker='AA' AND date=?",
-                 (days[3],))
+    # ticker dengan OHLC violation sistematis → DATA_UNUSABLE (>3 baris, >0.2%)
+    for i in range(10):
+        conn.execute("UPDATE prices SET high=1.0, low=99.0 WHERE ticker='AA' AND date=?",
+                     (days[i],))
     # ticker delisted close-only
     for i, dt in enumerate(days[:200]):
         conn.execute("INSERT INTO prices_delisted VALUES(?,?,?)", (dt, "ZZ", 50.0 + i))
