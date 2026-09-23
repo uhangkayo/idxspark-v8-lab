@@ -1,0 +1,44 @@
+# /etc/systemd/system/idxspark-v8-lab-run.service — SKELETON, BELUM DI-INSTALL
+# Tidak ada [Install]/timer/cron. Sentinel ENABLE tidak dibuat (fail-closed:
+# enabled=false pada lab.yaml tetap memblokir runner).
+# Angka CPU/RAM = ilustrasi review, bukan hasil pengukuran (Lampiran D §5).
+
+[Unit]
+Description=IDX Spark V8 isolated research lab
+ConditionPathExists=/var/lib/idxspark-v8-lab/ENABLE
+
+[Service]
+Type=oneshot
+User=idxspark-lab
+Group=idxspark-lab
+WorkingDirectory=/var/lib/idxspark-v8-lab/state
+EnvironmentFile=-/etc/idxspark-v8-lab/snapshot.env
+ExecStart=/opt/idxspark-v8-lab/venv/bin/python -I -B /opt/idxspark-v8-lab/app/run_experiment.py --config /etc/idxspark-v8-lab/lab.yaml --snapshot ${V8LAB_SNAPSHOT}
+Environment=OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1
+UMask=0077
+NoNewPrivileges=yes
+CapabilityBoundingSet=
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+PrivateNetwork=yes
+RestrictAddressFamilies=AF_UNIX
+RestrictNamespaces=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+ReadOnlyPaths=/opt/idxspark-v8-lab /etc/idxspark-v8-lab /var/lib/idxspark-v8-lab/inputs
+ReadWritePaths=/var/lib/idxspark-v8-lab/state /var/lib/idxspark-v8-lab/results /var/log/idxspark-v8-lab
+InaccessiblePaths=-/root -/opt/idx-dashboard -/opt/idxbot -/var/lib/idxspark-v8-lab/inbox -/run -/var/run
+CPUQuota=50%
+MemoryHigh=1536M
+MemoryMax=2G
+TasksMax=64
+IOWeight=10
+Nice=10
+TimeoutStartSec=20min
+TimeoutStopSec=20s
+KillMode=control-group
+OOMPolicy=stop
+Restart=no

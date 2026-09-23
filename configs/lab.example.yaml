@@ -1,0 +1,150 @@
+# /etc/idxspark-v8-lab/lab.yaml — template canonical §13 (config_version 1)
+# Parameter null WAJIB menghentikan SHADOW_QUALIFIED/promosi — bukan default.
+project: idxspark-v8-lab
+config_version: 1
+mode: REPLAY
+enabled: false
+
+isolation:
+  dedicated_worker_required: true   # same-host = alternatif terbatas (Lampiran D §4)
+  direct_production_read: false
+  production_write: false
+  network_egress: false
+  external_notifications: false
+  order_execution: false
+  auto_promotion: false
+
+storage:
+  input_root: /var/lib/idxspark-v8-lab
+  output_root: /var/lib/idxspark-v8-lab
+  input_mount_readonly: true
+  ledger: /var/lib/idxspark-v8-lab/state/v8lab_runs.sqlite
+
+run:
+  mode: REPLAY
+  replay_policy: CONSERVATIVE
+  stubs_required: true
+  stubs_record_only: true
+  default_clock: AS_OF
+  no_live_trading: true
+  single_writer: true
+  publish_complete_only: true
+  allow_order_publication: false
+  allow_selection_publication: false
+  publish_decisions_only: false
+  selection_publication_frequency: null
+  publication_freshness_seconds: 86400
+  decision_timezone: Asia/Jakarta
+
+research:
+  experiment_id: null
+  enabled_feature_packages: [price_volume]
+  feature_lookup_cutoffs:
+    b1_2016_2019: null
+    b2_2020_2022: null
+    b3_2023_2026: null
+  train_end: 2019-12-31
+  calib_end: 2021-12-31
+  test_end: 2026-06-30
+  forward_start: 2026-07-01
+  backfill_days: null
+
+selection:
+  policy_version: null
+  p_min: null
+  expected_net_min: null
+  total_risk_budget: null
+  max_open_positions: null
+  max_sector_exposure: null
+  baseline_cap_on: 2
+  baseline_cap_off: 1
+
+execution:
+  mode: REPLAY
+  kernel_config: null
+  venue_configs: null
+  paper_initial_cash: 100000000
+  enforce_price_checks: true
+  enforce_availability: true
+  replay_clock: AS_OF
+  broker_stubs: true
+  stubs_record_only: true
+
+runtime_budget:
+  cpu_limit: null
+  memory_limit_bytes: null
+  max_run_seconds: null
+  poll_interval_seconds: null
+
+# --- ekstensi ops: allowlist sumber bridge (manifest operator, bukan sweep) ---
+bridge:
+  per_source_budget_seconds: 900
+  keep_snapshots: 2
+  sources:
+    - name: idx_ohlcv
+      path: /root/.hermes/skills/idx-trading/scripts/idx_ohlcv.db
+      tables:
+        - name: prices
+          date_column: date
+        - name: prices_raw
+          date_column: date
+        - name: prices_delisted
+          date_column: date
+        - name: prices_delisted_meta
+          date_column: null
+        - name: dividends
+          date_column: date
+        - name: news
+          date_column: null
+        - name: sb_news
+          date_column: null
+        - name: sb_dividends
+          date_column: null
+    - name: idx_monthly
+      path: /root/.hermes/skills/idx-trading/scripts/idx_monthly.db
+      tables:
+        - name: emiten
+          date_column: null
+        - name: stock_monthly
+          date_column: Month
+        - name: broker_monthly
+          date_column: Month
+        - name: industry_monthly
+          date_column: Month
+        - name: edd_markets
+          date_column: null
+        - name: sbl_daily
+          date_column: Date
+        - name: sbl_lendable
+          date_column: Date
+        - name: sbl_top
+          date_column: Date
+        - name: fi_di_daily
+          date_column: Date
+        - name: corporate_actions
+          date_column: null
+    - name: idx_flow
+      path: /root/.hermes/skills/idx-trading/scripts/idx_flow.db
+      tables:
+        - name: stock_summary
+          date_column: Date
+        - name: broker_summary
+          date_column: Date
+        - name: index_summary
+          date_column: Date
+    - name: ticker_sectors
+      path: /root/.hermes/skills/idx-trading/scripts/ticker_sectors.db
+      tables:
+        - name: sectors
+          date_column: null
+    - name: idx_survivorship
+      path: /root/.hermes/skills/idx-trading/scripts/idx_survivorship.db
+      tables:
+        - name: delisted_events
+          date_column: null
+        - name: delisted_final
+          date_column: null
+        - name: wiki_meta
+          date_column: null
+        - name: wiki_universe
+          date_column: null
