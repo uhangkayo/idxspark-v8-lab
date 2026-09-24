@@ -1,8 +1,9 @@
 # persistence/ledger.py — Single-writer, append-only, idempotent (Lampiran C §1/§7)
 # Aturan yang ditegakkan di DB (bukan hanya konvensi):
 #   * Tidak ada UPDATE/DELETE pada tabel ledger (trigger ABORT).
-#   * Tidak ada INSERT OR REPLACE: insert ON CONFLICT DO NOTHING lalu bandingkan
-#     result_digest — konflik ID dengan digest berbeda = IntegrityError.
+#   * Tidak ada INSERT OR REPLACE dan tidak ada ON CONFLICT DO NOTHING:
+#     INSERT polos — konflik UNIQUE apapun (PK maupun non-PK) = IntegrityError
+#     (fail-closed). Idempotensi retry via SELECT id + bandingkan result_digest.
 #   * Satu writer: file lock (fcntl) + BEGIN IMMEDIATE.
 #   * Setiap baris mendapat ledger_seq global dari LedgerAppend dalam transaksi sama.
 
@@ -296,9 +297,13 @@ class Ledger:
                 cols.append(k)
                 vals.append(_to_db(v))
             ph = ",".join("?" * len(cols))
+            # Fail-closed: INSERT polos — konflik UNIQUE non-PK (mis. Run(slot_id,
+            # generation)) WAJIB raise, bukan ditelan. Idempotensi retry ditangani
+            # SELECT di atas (id sama + digest sama); ON CONFLICT DO NOTHING pernah
+            # menelan INSERT Run sehingga baris run tak pernah ada → FK Attempt
+            # gagal (insiden 24-09, append seq 43 dangling).
             self.conn.execute(
-                f"INSERT INTO {table} ({','.join(cols)}) VALUES ({ph}) "
-                "ON CONFLICT DO NOTHING", vals)
+                f"INSERT INTO {table} ({','.join(cols)}) VALUES ({ph})", vals)
             self.conn.commit()
             return row_id
         except sqlite3.IntegrityError as e:
@@ -343,6 +348,22 @@ class Ledger:
             "SELECT COALESCE(MAX(attempt_no),0) FROM Attempt WHERE run_id=?",
             (run_id,)).fetchone()
         return int(row[0])
+
+    def last_generation(self, slot_id: str) -> int:
+        """Generasi Run tertinggi untuk slot — snapshot baru = run baru
+        (generasi increment), bukan timpa (UNIQUE(slot_id, generation))."""
+        row = self.conn.execute(
+            "SELECT COALESCE(MAX(generation),0) FROM Run WHERE slot_id=?",
+            (slot_id,)).fetchone()
+        return int(row[0])
+
+    def get_run_id_by_slot_manifest(self, slot_id: str, manifest_id: str) -> Optional[str]:
+        """Run yang sudah terdaftar untuk (slot, input manifest) — retry snapshot
+        identik mengembalikan run sama (idempotent), bukan generasi baru."""
+        row = self.conn.execute(
+            "SELECT id FROM Run WHERE slot_id=? AND input_manifest_id=? "
+            "ORDER BY generation DESC LIMIT 1", (slot_id, manifest_id)).fetchone()
+        return row[0] if row else None
 
     def append_attempt_event(self, rec: AttemptEventRec) -> str:
         return self.append("AttemptEvent", rec)

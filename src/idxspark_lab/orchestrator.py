@@ -154,16 +154,27 @@ def run_profile(config_path: str, snapshot_id: str,
                 "snapshot/1", "v8lab-bridge")
 
             env_hash = environment_hash(platform.python_version(), enums.CODE_VERSION)
-            run = RunRec(
-                slot_id=slot_id, generation=1, config_id=config_id,
-                universe_manifest_id=snapshot_artifact,
-                input_manifest_id=snapshot_artifact,
-                feature_spec_id=feature_spec_id,
-                availability_mode="OBSERVED", ledger_cutoff_seq=0,
-                evaluation_clock="REPLAY",
-                price_asof=decision_at, decision_at=decision_at,
-                git_commit=_git_commit(), environment_hash=env_hash, seed=0)
-            run_id = ledger.append("Run", run)
+            # Kontrak slot/run (Lampiran C §4 + "snapshot baru = run baru"):
+            #   * retry snapshot IDENTIK → run sama (idempotent, generation tetap)
+            #   * snapshot BARU di slot sama → generasi increment (run baru)
+            #   * cutoff baru → slot baru → generasi 1
+            existing_run_id = ledger.get_run_id_by_slot_manifest(
+                slot_id, snapshot_artifact)
+            if existing_run_id is not None:
+                run_id = existing_run_id
+            else:
+                run = RunRec(
+                    slot_id=slot_id,
+                    generation=ledger.last_generation(slot_id) + 1,
+                    config_id=config_id,
+                    universe_manifest_id=snapshot_artifact,
+                    input_manifest_id=snapshot_artifact,
+                    feature_spec_id=feature_spec_id,
+                    availability_mode="OBSERVED", ledger_cutoff_seq=0,
+                    evaluation_clock="REPLAY",
+                    price_asof=decision_at, decision_at=decision_at,
+                    git_commit=_git_commit(), environment_hash=env_hash, seed=0)
+                run_id = ledger.append("Run", run)
 
             existing = ledger.get_publication_by_run(run_id)
             if existing and not force_retry:
