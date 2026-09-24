@@ -1,0 +1,15 @@
+# /etc/systemd/system/idxspark-v8-lab.timer
+# Harian 17:15 WIB (setelah sesi IDX tutup + fetcher produksi beres).
+# Persistent=true: catch-up saat boot jika terlewat.
+# Trigger = pipeline (yang Requires bridge root terlebih dulu).
+
+[Unit]
+Description=IDX Spark V8 lab - timer pipeline harian
+
+[Timer]
+OnCalendar=*-*-* 17:15:00 Asia/Jakarta
+Persistent=true
+Unit=idxspark-v8-lab-pipeline.service
+
+[Install]
+WantedBy=timers.target

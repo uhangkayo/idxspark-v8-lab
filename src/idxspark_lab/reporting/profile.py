@@ -1,14 +1,17 @@
 # reporting/profile.py — Profil coverage S1-S3-lite → coverage.json
 # Semua angka punya denominator eksplisit; missing ≠ nol.
+# spec_version="v3": tambah klasifikasi freshness jendela-akhir
+# (PROFILE_OK_FRESH / PROFILE_OK_STALE_TAIL / DATA_UNUSABLE).
 
 import json
 from typing import Any, Dict, List
 
 from ..adapters.snapshot_reader import SnapshotReader
+from ..data import freshness as fr
 from ..data import universe as uni
 
 
-def coverage_report(reader: SnapshotReader) -> Dict[str, Any]:
+def coverage_report(reader: SnapshotReader, spec_version: str = "v2") -> Dict[str, Any]:
     universe, umeta = uni.resolve_universe(reader)
     calendar = uni.market_calendar(reader)
     manifest = reader.manifest
@@ -17,6 +20,7 @@ def coverage_report(reader: SnapshotReader) -> Dict[str, Any]:
     tickers = uni.profile_tickers(reader, universe, calendar, common_cutoff)
     classified = []
     counts = {"PROFILE_OK": 0, "DATA_UNUSABLE": 0}
+    v3_counts = {s: 0 for s in fr.V3_STATUSES}
     reason_counts: Dict[str, int] = {}
     for rec in tickers:
         status, reasons = uni.classify(rec)
@@ -25,6 +29,13 @@ def coverage_report(reader: SnapshotReader) -> Dict[str, Any]:
         counts[status] += 1
         for r in reasons:
             reason_counts[r] = reason_counts.get(r, 0) + 1
+        if spec_version == "v3":
+            gap = fr.tail_gap_sessions(rec.get("last"), calendar)
+            rec["tail_gap_sessions"] = gap
+            st3, rs3 = fr.classify_v3(rec, gap)
+            rec["profile_status_v3"] = st3
+            rec["freshness_reasons_v3"] = rs3
+            v3_counts[st3] += 1
         classified.append(rec)
 
     # coverage sumber pelengkap
@@ -48,12 +59,16 @@ def coverage_report(reader: SnapshotReader) -> Dict[str, Any]:
         except Exception as e:  # tabel tak ada/berubah → tercatat, bukan nol
             cov[tbl] = {"rows": None, "error": str(e).split(":")[0]}
 
-    # peringkat data_unusable untuk laporan
+    # peringkat data_unusable + (v3) stale tail untuk laporan
     unusable = [r for r in classified if r["profile_status"] == "DATA_UNUSABLE"]
+    stale_v3 = [r for r in classified if r.get("profile_status_v3") == "PROFILE_OK_STALE_TAIL"]
 
+    funnel: Dict[str, Any] = {"n_universe": len(universe), **counts,
+                              "invariant_ok": counts["PROFILE_OK"] + counts["DATA_UNUSABLE"] == len(universe)}
     report = {
         "schema_version": "1",
         "kind": "COVERAGE_PROFILE",
+        "spec_version": spec_version,
         "snapshot_id": manifest.get("snapshot_id"),
         "effective_cutoff": common_cutoff,
         "per_source_watermarks": manifest.get("per_source_watermarks"),
@@ -62,8 +77,7 @@ def coverage_report(reader: SnapshotReader) -> Dict[str, Any]:
                      "last": calendar[-1] if calendar else None,
                      "method": ">=60% emiten aktif (60 sesi trailing) punya bar"},
         "universe": umeta,
-        "funnel": {"n_universe": len(universe), **counts,
-                   "invariant_ok": counts["PROFILE_OK"] + counts["DATA_UNUSABLE"] == len(universe)},
+        "funnel": funnel,
         "unusable_reasons": reason_counts,
         "unusable_tickers": [
             {"ticker": r["ticker"], "reasons": r["unusable_reasons"],
@@ -80,4 +94,17 @@ def coverage_report(reader: SnapshotReader) -> Dict[str, Any]:
             "Basis harga snapshot: " + str([f"{d['name']}:{d['rows']} bar" for d in manifest.get("datasets", [])]),
         ],
     }
+    if spec_version == "v3":
+        report["funnel_v3"] = {"n_universe": len(universe), **v3_counts,
+                               "stale_tail_gap_threshold_sessions": fr.STALE_TAIL_GAP_SESSIONS,
+                               "invariant_ok": sum(v3_counts.values()) == len(universe)}
+        report["stale_tail_tickers_v3"] = [
+            {"ticker": r["ticker"], "last": r.get("last"),
+             "tail_gap_sessions": r.get("tail_gap_sessions"),
+             "reasons": r.get("freshness_reasons_v3")}
+            for r in sorted(stale_v3, key=lambda x: -(x.get("tail_gap_sessions") or 0))]
+        report["notes"].append(
+            "v3: PROFILE_OK_STALE_TAIL = bar terakhir emiten > "
+            f"{fr.STALE_TAIL_GAP_SESSIONS} sesi pasar sebelum sesi terakhir "
+            "(klaster gap kalender; bukan carry-forward close identik).")
     return report

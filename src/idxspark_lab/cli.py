@@ -29,6 +29,18 @@ def main(argv=None):
                         help="run profil coverage diagnostik (idempotent)")
     pr.add_argument("snapshot_id")
     pr.add_argument("--force-retry", action="store_true")
+    fr = sub.add_parser("freshness", parents=[common],
+                        help="profil v3: coverage + tail-gap klaster stale (idempotent)")
+    fr.add_argument("snapshot_id")
+    fr.add_argument("--force-retry", action="store_true")
+    e0p = sub.add_parser("e0", parents=[common],
+                         help="E0 replay B0↔B1 (simulasi, DIAGNOSTIC_ONLY)")
+    e0p.add_argument("snapshot_id")
+    e0p.add_argument("--days", type=int, default=126,
+                     help="jumlah sesi keputusan terakhir (default 126)")
+    e0p.add_argument("--fee-profile", default="PROD_FLAT",
+                     choices=["PROD_FLAT", "AJAIB_EXACT"])
+    e0p.add_argument("--force-retry", action="store_true")
     rp = sub.add_parser("report", parents=[common], help="cetak laporan run terakhir")
     rp.add_argument("run_id", nargs="?")
     sub.add_parser("status", parents=[common], help="ringkasan ledger")
@@ -76,6 +88,34 @@ def main(argv=None):
                          indent=2, default=str))
         return 0
 
+    if args.cmd == "freshness":
+        from idxspark_lab.orchestrator import run_profile
+        out = run_profile(args.config, args.snapshot_id,
+                          force_retry=args.force_retry, spec_version="v3")
+        if out["status"] == "IDEMPOTENT_HIT":
+            pub = out["publication"]
+            print(f"[IDEMPOTENT] publication sudah ada untuk run {out['run_id'][:16]}…")
+            print(json.dumps({"funnel_v3": pub["disjoint_counts"],
+                              "result": pub["result"]}, indent=2))
+            return 0
+        print(json.dumps({k: v for k, v in out.items() if k != "publication"},
+                         indent=2, default=str))
+        return 0
+
+    if args.cmd == "e0":
+        from idxspark_lab.orchestrator import run_e0
+        out = run_e0(args.config, args.snapshot_id, days=args.days,
+                     fee_profile=args.fee_profile, force_retry=args.force_retry)
+        if out["status"] == "IDEMPOTENT_HIT":
+            pub = out["publication"]
+            print(f"[IDEMPOTENT] publication sudah ada untuk run {out['run_id'][:16]}…")
+            print(json.dumps({"disjoint_counts": pub["disjoint_counts"],
+                              "result": pub["result"]}, indent=2))
+            return 0
+        print(json.dumps({k: v for k, v in out.items() if k != "publication"},
+                         indent=2, default=str))
+        return 0
+
     if args.cmd == "report":
         from idxspark_lab.persistence.ledger import Ledger
         cfg = load_config(args.config)
@@ -87,7 +127,10 @@ def main(argv=None):
                 return 1
             run_id = args.run_id or pubs[0]["run_id"]
             p = led.get_publication_by_run(run_id)
-            rep = Path(cfg["storage"]["output_root"]) / "results" / run_id / "report.md"
+            base = Path(cfg["storage"]["output_root"]) / "results" / run_id
+            rep = base / "report.md"
+            if not rep.is_file():
+                rep = base / "e0_report.md"
             if p is None or not rep.is_file():
                 print(f"report/publication tidak ada untuk run {run_id}", file=sys.stderr)
                 return 1

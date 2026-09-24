@@ -1,0 +1,18 @@
+# /etc/systemd/system/idxspark-v8-lab-bridge.service
+# Bridge ROOT: 5 DB produksi -> snapshot inputs/<hash> + snapshot.env.
+# Idempotent (hash sama tidak duplikat); retention dari lab.yaml (keep 2).
+
+[Unit]
+Description=IDX Spark V8 lab - bridge snapshot (root)
+After=local-fs.target
+ConditionPathExists=/var/lib/idxspark-v8-lab/ENABLE
+
+[Service]
+Type=oneshot
+User=root
+ExecStart=/bin/bash /opt/idxspark-v8-lab/app/scripts/ops-bridge.sh
+UMask=0022
+Nice=10
+TimeoutStartSec=1800
+StandardOutput=journal
+StandardError=journal

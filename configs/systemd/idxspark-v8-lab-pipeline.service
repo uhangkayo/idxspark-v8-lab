@@ -1,0 +1,38 @@
+# /etc/systemd/system/idxspark-v8-lab-pipeline.service
+# Pipeline RUNNER (user idxspark-lab, read-only inputs): freshness v3
+# + E0 replay B0/B1 + report. Chained setelah bridge root via Requires.
+# Fail-closed: ENABLE sentinel + snapshot.env wajib ada.
+
+[Unit]
+Description=IDX Spark V8 lab - pipeline harian (freshness v3 + E0)
+Requires=idxspark-v8-lab-bridge.service
+After=idxspark-v8-lab-bridge.service
+ConditionPathExists=/var/lib/idxspark-v8-lab/ENABLE
+
+[Service]
+Type=oneshot
+User=idxspark-lab
+Group=idxspark-lab
+EnvironmentFile=-/etc/idxspark-v8-lab/snapshot.env
+ExecStart=/bin/bash /opt/idxspark-v8-lab/app/scripts/ops-pipeline.sh
+Environment=OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1
+UMask=0077
+NoNewPrivileges=yes
+CapabilityBoundingSet=
+ProtectSystem=strict
+ReadWritePaths=/var/lib/idxspark-v8-lab
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+PrivateNetwork=yes
+RestrictAddressFamilies=AF_UNIX
+RestrictNamespaces=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+TimeoutStartSec=3600
+StandardOutput=journal
+StandardError=journal
